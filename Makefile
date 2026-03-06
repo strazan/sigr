@@ -1,0 +1,26 @@
+PREFIX  ?= /usr/local
+VERSION ?= dev
+COMMIT  := $(shell git rev-parse --short HEAD 2>/dev/null)
+DATE    := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+LDFLAGS := -s -w \
+	-X main.version=$(VERSION) \
+	-X main.commit=$(COMMIT) \
+	-X main.date=$(DATE)
+BIN = bin/sigr
+
+build:
+	go build -ldflags "$(LDFLAGS)" -o $(BIN) .
+
+install: build
+	install -d $(PREFIX)/bin
+	install -m 755 $(BIN) $(PREFIX)/bin/sigr
+
+reinstall: uninstall install
+
+uninstall:
+	rm -f $(PREFIX)/bin/sigr
+
+clean:
+	rm -f $(BIN)
+
+.PHONY: build install reinstall uninstall clean
