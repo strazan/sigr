@@ -35,6 +35,7 @@ type model struct {
 	back       bool // true = return to list instead of exiting
 	fix        bool // true = enter fix mode
 	comments   bool // true = enter comment mode
+	heal       bool // true = enter heal mode
 	fromList   bool // true = launched from list view
 	listState  *listState
 	err        error
@@ -107,6 +108,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "c":
 			if m.pr != nil && len(m.pr.Comments) > 0 {
 				m.comments = true
+				return m, tea.Quit
+			}
+		case "h":
+			if m.pr != nil {
+				m.heal = true
 				return m, tea.Quit
 			}
 		}
@@ -330,6 +336,9 @@ func (m model) View() string {
 	}
 	if m.pr != nil && len(m.pr.Comments) > 0 {
 		hint += " · c comments"
+	}
+	if m.pr != nil {
+		hint += " · h heal"
 	}
 	b.WriteString("\n" + dim.Render(hint) + "\n")
 

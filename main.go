@@ -39,6 +39,15 @@ func main() {
 		return
 	}
 
+	if len(os.Args) > 1 && os.Args[1] == "heal" {
+		prRef := ""
+		if len(os.Args) > 2 {
+			prRef = os.Args[2]
+		}
+		runHeal(prRef, interval, nil)
+		return
+	}
+
 	if len(os.Args) > 1 && os.Args[1] == "pr" {
 		prRef := runCreatePR(os.Args[2:])
 		runWatch(prRef, interval, nil)
@@ -76,6 +85,10 @@ func runWatch(prRef string, interval time.Duration, ls *listState) {
 	}
 	if fm.comments && fm.pr != nil {
 		runComments(fm.prRef, fm.pr, interval, fm.fromList, fm.listState)
+		return
+	}
+	if fm.heal && fm.pr != nil {
+		runHeal(fm.prRef, interval, fm.listState)
 		return
 	}
 	if fm.back {
@@ -156,5 +169,51 @@ func runComments(prRef string, pr *ghPR, interval time.Duration, fromList bool, 
 	if fm.back {
 		runWatch(prRef, interval, ls)
 		return
+	}
+}
+
+func runHeal(prRef string, interval time.Duration, ls *listState) {
+	// Fetch PR data synchronously
+	args := []string{"pr", "view", "--json",
+		"statusCheckRollup,number,title,headRefName,reviewDecision,reviewRequests,reviews,comments"}
+	if prRef != "" {
+		args = append(args, prRef)
+	}
+	out, err := exec.Command("gh", args...).Output()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %s\n", cmdError(err))
+		os.Exit(1)
+	}
+	var pr ghPR
+	if err := json.Unmarshal(out, &pr); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+
+	m := healModel{
+		prRef:             prRef,
+		pr:                &pr,
+		interval:          interval,
+		fromList:          ls != nil,
+		listState:         ls,
+		startedAt:         time.Now().UTC(),
+		addressedRuns:     make(map[int]string),
+		addressedComments: make(map[string]bool),
+	}
+
+	p := tea.NewProgram(m, tea.WithAltScreen())
+	finalModel, err := p.Run()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+
+	fm := finalModel.(healModel)
+	if fm.back {
+		if fm.fromList {
+			runList(interval, fm.listState)
+		} else {
+			runWatch(prRef, interval, nil)
+		}
 	}
 }
