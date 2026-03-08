@@ -36,6 +36,8 @@ type model struct {
 	fix        bool // true = enter fix mode
 	comments   bool // true = enter comment mode
 	heal       bool // true = enter heal mode
+	merging    bool // merge in progress or showing merge error
+	mergeErr   error
 	fromList   bool // true = launched from list view
 	listState  *listState
 	err        error
@@ -50,6 +52,11 @@ type tickMsg time.Time
 
 type prDataMsg struct {
 	pr *ghPR
+}
+
+type mergeResultMsg struct {
+	output string
+	err    error
 }
 
 // Commands
@@ -73,6 +80,20 @@ func fetchPR(prRef string) tea.Cmd {
 	}
 }
 
+func mergePRCmd(prNumber int, auto bool) tea.Cmd {
+	return func() tea.Msg {
+		args := []string{"pr", "merge", fmt.Sprintf("%d", prNumber), "--squash", "--delete-branch"}
+		if auto {
+			args = append(args, "--auto")
+		}
+		out, err := exec.Command("gh", args...).CombinedOutput()
+		if err != nil {
+			return mergeResultMsg{output: string(out), err: fmt.Errorf("%s", cmdError(err))}
+		}
+		return mergeResultMsg{output: string(out)}
+	}
+}
+
 func tickCmd(d time.Duration) tea.Cmd {
 	return tea.Tick(d, func(t time.Time) tea.Msg {
 		return tickMsg(t)
@@ -90,6 +111,14 @@ func (m model) Init() tea.Cmd {
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		if m.mergeErr != nil {
+			m.merging = false
+			m.mergeErr = nil
+			return m, nil
+		}
+		if m.merging {
+			return m, nil
+		}
 		switch msg.String() {
 		case "ctrl+c", "q":
 			m.quitting = true
@@ -114,6 +143,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.pr != nil {
 				m.heal = true
 				return m, tea.Quit
+			}
+		case "m":
+			if m.pr != nil {
+				m.merging = true
+				return m, mergePRCmd(m.pr.Number, false)
+			}
+		case "M":
+			if m.pr != nil {
+				m.merging = true
+				return m, mergePRCmd(m.pr.Number, true)
 			}
 		}
 
@@ -170,6 +209,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.quitting = true
 			return m, tea.Quit
 		}
+
+	case mergeResultMsg:
+		if msg.err != nil {
+			m.mergeErr = msg.err
+		} else {
+			m.quitting = true
+			m.exitCode = 0
+			return m, tea.Quit
+		}
 	}
 
 	return m, nil
@@ -205,6 +253,17 @@ func (m model) View() string {
 	b.WriteString(" " + pr.Title + " ")
 	b.WriteString(dim.Render("(" + pr.HeadRefName + ")"))
 	b.WriteString("\n\n")
+
+	// Merge state
+	if m.merging {
+		if m.mergeErr != nil {
+			b.WriteString(red.Render("Merge failed: "+m.mergeErr.Error()) + "\n")
+			b.WriteString(dim.Render("press any key to continue") + "\n")
+		} else {
+			b.WriteString(dim.Render("merging...") + "\n")
+		}
+		return b.String()
+	}
 
 	// Checks
 	if m.collapsed {
@@ -339,6 +398,7 @@ func (m model) View() string {
 	}
 	if m.pr != nil {
 		hint += " · h heal"
+		hint += " · m merge · M auto-merge"
 	}
 	b.WriteString("\n" + dim.Render(hint) + "\n")
 
