@@ -436,6 +436,16 @@ func (m healModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.pr = msg.pr
 		m.checks = parseChecks(msg.pr.StatusCheckRollup)
 
+		if msg.pr.State == "MERGED" || msg.pr.State == "CLOSED" {
+			m.log = append(m.log, healLogEntry{time: time.Now(), message: fmt.Sprintf("PR %s — leaving heal mode", strings.ToLower(msg.pr.State))})
+			m.quitting = true
+			if m.worktreeDir != "" {
+				m.phase = healTeardown
+				return m, healTeardownWorktree(m.worktreeDir, m.worktreeOwn)
+			}
+			return m, tea.Quit
+		}
+
 		if m.phase != healWatching {
 			return m, nil
 		}
