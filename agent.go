@@ -115,12 +115,16 @@ func (w *issueWorker) isActive() bool {
 // Agent model
 
 type agentModel struct {
-	label    string
-	all      bool
-	interval time.Duration
-	quitting bool
-	workers  map[int]*issueWorker // keyed by issue number
-	log      []healLogEntry
+	label     string
+	all       bool
+	acceptAll bool
+	interval  time.Duration
+	quitting  bool
+	workers   map[int]*issueWorker // keyed by issue number
+	pending   []ghIssue            // issues awaiting user acceptance
+	cursor    int                  // cursor position in pending list
+	skipped   map[int]bool         // issues the user has skipped
+	log       []healLogEntry
 }
 
 // Message wrapper for routing to workers
@@ -565,6 +569,21 @@ func (m agentModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				agentCleanupWorktree(w.worktree, w.branch)
 			}
 			return m, tea.Quit
+		case "up", "k":
+			if len(m.pending) > 0 && m.cursor > 0 {
+				m.cursor--
+			}
+			return m, nil
+		case "down", "j":
+			if len(m.pending) > 0 && m.cursor < len(m.pending)-1 {
+				m.cursor++
+			}
+			return m, nil
+		case "enter", "y":
+			return m, m.acceptCurrent()
+		case "n":
+			m.skipCurrent()
+			return m, nil
 		}
 
 	case agentTickMsg:
@@ -586,17 +605,17 @@ func (m agentModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if _, exists := m.workers[issue.Number]; exists {
 				continue
 			}
-			issueCopy := issue
-			w := &issueWorker{
-				issue:             &issueCopy,
-				phase:             workerClaim,
-				startedAt:         time.Now().UTC(),
-				addressedRuns:     make(map[int]string),
-				addressedComments: make(map[string]bool),
+			if m.isPending(issue.Number) || m.skipped[issue.Number] {
+				continue
 			}
-			m.workers[issue.Number] = w
-			m.addLog(fmt.Sprintf("#%d Found issue: %s", issue.Number, issue.Title))
-			cmds = append(cmds, agentClaimIssue(issue.Number))
+			if m.acceptAll {
+				issueCopy := issue
+				m.startWorker(&issueCopy)
+				cmds = append(cmds, agentClaimIssue(issue.Number))
+			} else {
+				m.pending = append(m.pending, issue)
+				m.addLog(fmt.Sprintf("#%d Found issue: %s (awaiting acceptance)", issue.Number, issue.Title))
+			}
 		}
 		return m, tea.Batch(cmds...)
 
@@ -775,6 +794,54 @@ func (m agentModel) updateWorker(num int, w *issueWorker, msg tea.Msg) (tea.Mode
 	return m, nil
 }
 
+func (m *agentModel) isPending(number int) bool {
+	for _, p := range m.pending {
+		if p.Number == number {
+			return true
+		}
+	}
+	return false
+}
+
+func (m *agentModel) startWorker(issue *ghIssue) {
+	w := &issueWorker{
+		issue:             issue,
+		phase:             workerClaim,
+		startedAt:         time.Now().UTC(),
+		addressedRuns:     make(map[int]string),
+		addressedComments: make(map[string]bool),
+	}
+	m.workers[issue.Number] = w
+	m.addLog(fmt.Sprintf("#%d Accepted issue: %s", issue.Number, issue.Title))
+}
+
+func (m *agentModel) acceptCurrent() tea.Cmd {
+	if len(m.pending) == 0 {
+		return nil
+	}
+	issue := m.pending[m.cursor]
+	m.pending = append(m.pending[:m.cursor], m.pending[m.cursor+1:]...)
+	issueCopy := issue
+	m.startWorker(&issueCopy)
+	if m.cursor >= len(m.pending) && m.cursor > 0 {
+		m.cursor--
+	}
+	return agentClaimIssue(issue.Number)
+}
+
+func (m *agentModel) skipCurrent() {
+	if len(m.pending) == 0 {
+		return
+	}
+	issue := m.pending[m.cursor]
+	m.pending = append(m.pending[:m.cursor], m.pending[m.cursor+1:]...)
+	m.skipped[issue.Number] = true
+	m.addLog(fmt.Sprintf("#%d Skipped issue: %s", issue.Number, issue.Title))
+	if m.cursor >= len(m.pending) && m.cursor > 0 {
+		m.cursor--
+	}
+}
+
 func (m *agentModel) addLog(message string) {
 	m.log = append(m.log, healLogEntry{time: time.Now(), message: message})
 }
@@ -792,9 +859,28 @@ func (m agentModel) View() string {
 	b.WriteString(dim.Render(fmt.Sprintf("  (polling every %s)", m.interval)))
 	b.WriteString("\n\n")
 
-	if len(m.workers) == 0 {
+	// Pending issues
+	if len(m.pending) > 0 {
+		b.WriteString(bold.Render(" Pending issues:") + "\n")
+		for i, issue := range m.pending {
+			cursor := "  "
+			if i == m.cursor {
+				cursor = "> "
+			}
+			line := fmt.Sprintf("%s%s %s", cursor, bold.Render(fmt.Sprintf("#%d", issue.Number)), issue.Title)
+			if i == m.cursor {
+				b.WriteString(yellow.Render(line) + "\n")
+			} else {
+				b.WriteString(dim.Render(line) + "\n")
+			}
+		}
+		b.WriteString("\n")
+	}
+
+	// Active workers
+	if len(m.workers) == 0 && len(m.pending) == 0 {
 		b.WriteString(dim.Render(" No active issues") + "\n")
-	} else {
+	} else if len(m.workers) > 0 {
 		nums := make([]int, 0, len(m.workers))
 		for n := range m.workers {
 			nums = append(nums, n)
@@ -826,7 +912,11 @@ func (m agentModel) View() string {
 		}
 	}
 
-	b.WriteString("\n" + dim.Render(" q quit") + "\n")
+	if len(m.pending) > 0 {
+		b.WriteString("\n" + dim.Render(" enter/y accept · n skip · q quit") + "\n")
+	} else {
+		b.WriteString("\n" + dim.Render(" q quit") + "\n")
+	}
 
 	return b.String()
 }

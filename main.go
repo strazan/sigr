@@ -37,6 +37,7 @@ func main() {
 	if len(os.Args) > 1 && os.Args[1] == "agent" {
 		label := "sigr"
 		all := false
+		acceptAll := false
 		for i := 2; i < len(os.Args); i++ {
 			switch {
 			case os.Args[i] == "--label" && i+1 < len(os.Args):
@@ -44,9 +45,11 @@ func main() {
 				i++
 			case os.Args[i] == "--all":
 				all = true
+			case os.Args[i] == "--accept-all":
+				acceptAll = true
 			}
 		}
-		runAgent(label, all, interval)
+		runAgent(label, all, acceptAll, interval)
 		return
 	}
 
@@ -234,12 +237,14 @@ func runHeal(prRef string, interval time.Duration, ls *listState) {
 	}
 }
 
-func runAgent(label string, all bool, interval time.Duration) {
+func runAgent(label string, all, acceptAll bool, interval time.Duration) {
 	m := agentModel{
-		label:    label,
-		all:      all,
-		interval: interval,
-		workers:  make(map[int]*issueWorker),
+		label:     label,
+		all:       all,
+		acceptAll: acceptAll,
+		interval:  interval,
+		workers:   make(map[int]*issueWorker),
+		skipped:   make(map[int]bool),
 	}
 
 	p := tea.NewProgram(m, tea.WithAltScreen())
