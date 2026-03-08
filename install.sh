@@ -35,8 +35,28 @@ URL="https://github.com/${REPO}/releases/download/${TAG}/${TARBALL}"
 TMPDIR="$(mktemp -d)"
 trap 'rm -rf "${TMPDIR}"' EXIT
 
+CHECKSUMS_URL="https://github.com/${REPO}/releases/download/${TAG}/checksums.txt"
+
 echo "Downloading ${URL}..."
 curl -fsSL "${URL}" -o "${TMPDIR}/${TARBALL}"
+curl -fsSL "${CHECKSUMS_URL}" -o "${TMPDIR}/checksums.txt"
+
+echo "Verifying checksum..."
+EXPECTED="$(grep "${TARBALL}" "${TMPDIR}/checksums.txt" | awk '{print $1}')"
+if command -v sha256sum >/dev/null 2>&1; then
+  ACTUAL="$(sha256sum "${TMPDIR}/${TARBALL}" | awk '{print $1}')"
+elif command -v shasum >/dev/null 2>&1; then
+  ACTUAL="$(shasum -a 256 "${TMPDIR}/${TARBALL}" | awk '{print $1}')"
+else
+  echo "Warning: no sha256sum or shasum found, skipping verification" >&2
+  ACTUAL="${EXPECTED}"
+fi
+if [ "${ACTUAL}" != "${EXPECTED}" ]; then
+  echo "Checksum verification failed!" >&2
+  exit 1
+fi
+echo "Checksum verified."
+
 tar -xzf "${TMPDIR}/${TARBALL}" -C "${TMPDIR}"
 
 INSTALL_DIR="/usr/local/bin"
