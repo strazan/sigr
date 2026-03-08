@@ -34,6 +34,7 @@ type model struct {
 	quitting   bool
 	back       bool // true = return to list instead of exiting
 	fix        bool // true = enter fix mode
+	comments   bool // true = enter comment mode
 	fromList   bool // true = launched from list view
 	listState  *listState
 	err        error
@@ -101,6 +102,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "f":
 			if m.hasFailedChecks() {
 				m.fix = true
+				return m, tea.Quit
+			}
+		case "c":
+			if m.pr != nil && len(m.pr.Comments) > 0 {
+				m.comments = true
 				return m, tea.Quit
 			}
 		}
@@ -321,6 +327,9 @@ func (m model) View() string {
 	}
 	if m.hasFailedChecks() {
 		hint += " · f fix"
+	}
+	if m.pr != nil && len(m.pr.Comments) > 0 {
+		hint += " · c comments"
 	}
 	b.WriteString("\n" + dim.Render(hint) + "\n")
 

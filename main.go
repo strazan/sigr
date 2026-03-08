@@ -74,6 +74,10 @@ func runWatch(prRef string, interval time.Duration, ls *listState) {
 		runFix(fm.prRef, fm.pr, interval, fm.fromList, fm.listState)
 		return
 	}
+	if fm.comments && fm.pr != nil {
+		runComments(fm.prRef, fm.pr, interval, fm.fromList, fm.listState)
+		return
+	}
 	if fm.back {
 		runList(interval, fm.listState)
 		return
@@ -126,6 +130,29 @@ func runFix(prRef string, pr *ghPR, interval time.Duration, fromList bool, ls *l
 	}
 
 	fm := finalModel.(fixModel)
+	if fm.back {
+		runWatch(prRef, interval, ls)
+		return
+	}
+}
+
+func runComments(prRef string, pr *ghPR, interval time.Duration, fromList bool, ls *listState) {
+	m := commentModel{
+		prRef:    prRef,
+		pr:       pr,
+		fromList: fromList,
+		ls:       ls,
+		comments: pr.Comments,
+	}
+
+	p := tea.NewProgram(m, tea.WithAltScreen())
+	finalModel, err := p.Run()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+
+	fm := finalModel.(commentModel)
 	if fm.back {
 		runWatch(prRef, interval, ls)
 		return
