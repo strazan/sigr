@@ -32,12 +32,10 @@ changelog:
       - "^test:"
       - "^chore:"
 
-homebrew_casks:
+brews:
   - repository:
       owner: strazan
       name: homebrew-tap
       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
-    homepage: https://github.com/siggelabor/sigr
+    homepage: https://github.com/strazan/sigr
     description: Monitor GitHub pull requests from the terminal
-    binaries:
-      - sigr

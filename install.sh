@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-REPO="siggelabor/sigr"
+REPO="strazan/sigr"
 
 detect_os() {
   case "$(uname -s)" in
@@ -25,8 +25,13 @@ ARCH="$(detect_arch)"
 echo "Detecting platform: ${OS}/${ARCH}"
 
 TAG="$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" | grep '"tag_name"' | sed 's/.*"tag_name": *"//;s/".*//')"
-VERSION="${TAG#v}"
 
+if [ -z "${TAG}" ]; then
+  echo "Failed to fetch latest release from ${REPO}. Check https://github.com/${REPO}/releases" >&2
+  exit 1
+fi
+
+VERSION="${TAG#v}"
 echo "Latest version: ${VERSION}"
 
 TARBALL="sigr_${VERSION}_${OS}_${ARCH}.tar.gz"
