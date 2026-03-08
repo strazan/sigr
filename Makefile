@@ -20,7 +20,13 @@ reinstall: uninstall install
 uninstall:
 	rm -f $(PREFIX)/bin/sigr
 
+release:
+ifndef v
+	$(error usage: make release v=0.1.0)
+endif
+	gh workflow run release.yml -f version=$(v)
+
 clean:
 	rm -f $(BIN)
 
-.PHONY: build install reinstall uninstall clean
+.PHONY: build install reinstall uninstall clean release
