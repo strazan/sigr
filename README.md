@@ -11,7 +11,7 @@ TUI for watching prs. Polls checks, reviews, and comments so you don't have to, 
 brew install strazan/tap/sigr
 
 # Shell script
-curl -fsSL https://raw.githubusercontent.com/siggelabor/sigr/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/strazan/sigr/main/install.sh | sh
 
 # From source
 make install
