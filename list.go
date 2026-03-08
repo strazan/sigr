@@ -33,12 +33,15 @@ type listState struct {
 }
 
 type listModel struct {
-	prs      []listPR
-	cursor   int
-	chosen   int // PR number selected by enter, 0 = none
-	err      error
-	quitting bool
-	interval time.Duration
+	prs        []listPR
+	cursor     int
+	chosen     int // PR number selected by enter, 0 = none
+	err        error
+	quitting   bool
+	interval   time.Duration
+	merging    bool
+	mergePRNum int
+	mergeErr   error
 }
 
 func fetchPRList() tea.Cmd {
@@ -63,6 +66,14 @@ func (m listModel) Init() tea.Cmd {
 func (m listModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		if m.mergeErr != nil {
+			m.merging = false
+			m.mergeErr = nil
+			return m, nil
+		}
+		if m.merging {
+			return m, nil
+		}
 		switch msg.String() {
 		case "ctrl+c", "q":
 			m.quitting = true
@@ -80,6 +91,27 @@ func (m listModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.chosen = m.prs[m.cursor].Number
 				return m, tea.Quit
 			}
+		case "m":
+			if m.prs != nil && m.cursor < len(m.prs) {
+				m.merging = true
+				m.mergePRNum = m.prs[m.cursor].Number
+				return m, mergePRCmd(m.prs[m.cursor].Number, false)
+			}
+		case "M":
+			if m.prs != nil && m.cursor < len(m.prs) {
+				m.merging = true
+				m.mergePRNum = m.prs[m.cursor].Number
+				return m, mergePRCmd(m.prs[m.cursor].Number, true)
+			}
+		}
+
+	case mergeResultMsg:
+		m.merging = false
+		if msg.err != nil {
+			m.mergeErr = msg.err
+			m.merging = true // keep showing error state
+		} else {
+			return m, fetchPRList()
 		}
 
 	case tickMsg:
@@ -192,6 +224,16 @@ func (m listModel) View() string {
 		return b.String()
 	}
 
+	if m.merging {
+		if m.mergeErr != nil {
+			b.WriteString(red.Render(fmt.Sprintf("Merge #%d failed: %s", m.mergePRNum, m.mergeErr.Error())) + "\n")
+			b.WriteString(dim.Render("press any key to continue") + "\n")
+		} else {
+			b.WriteString(dim.Render(fmt.Sprintf("merging #%d...", m.mergePRNum)) + "\n")
+		}
+		return b.String()
+	}
+
 	if len(m.prs) == 0 {
 		b.WriteString(dim.Render("no open PRs"))
 		b.WriteString("\n")
@@ -262,7 +304,7 @@ func (m listModel) View() string {
 		}
 	}
 
-	b.WriteString("\n" + dim.Render(fmt.Sprintf("↑/↓ navigate · enter select · q quit · polling every %s", m.interval)) + "\n")
+	b.WriteString("\n" + dim.Render(fmt.Sprintf("↑/↓ navigate · enter select · m merge · M auto-merge · q quit · polling every %s", m.interval)) + "\n")
 
 	return b.String()
 }
