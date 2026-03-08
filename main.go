@@ -34,6 +34,22 @@ func main() {
 		}
 	}
 
+	if len(os.Args) > 1 && os.Args[1] == "agent" {
+		label := "sigr"
+		all := false
+		for i := 2; i < len(os.Args); i++ {
+			switch {
+			case os.Args[i] == "--label" && i+1 < len(os.Args):
+				label = os.Args[i+1]
+				i++
+			case os.Args[i] == "--all":
+				all = true
+			}
+		}
+		runAgent(label, all, interval)
+		return
+	}
+
 	if len(os.Args) > 1 && os.Args[1] == "list" {
 		runList(interval, nil)
 		return
@@ -215,5 +231,31 @@ func runHeal(prRef string, interval time.Duration, ls *listState) {
 		} else {
 			runWatch(prRef, interval, nil)
 		}
+	}
+}
+
+func runAgent(label string, all bool, interval time.Duration) {
+	for {
+		m := agentModel{
+			label:         label,
+			all:           all,
+			skippedIssues: make(map[int]bool),
+		}
+
+		p := tea.NewProgram(m, tea.WithAltScreen())
+		finalModel, err := p.Run()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
+		}
+
+		fm := finalModel.(agentModel)
+		if fm.quitting || fm.prNumber == 0 {
+			return
+		}
+
+		// Hand off to heal mode
+		runHeal(strconv.Itoa(fm.prNumber), interval, nil)
+		// Loop for next issue
 	}
 }

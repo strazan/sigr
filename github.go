@@ -144,6 +144,20 @@ func resolveReviewDecision(decision string, reviews []ghReview) string {
 	return ""
 }
 
+// gh issue list JSON shape
+
+type ghLabel struct {
+	Name string `json:"name"`
+}
+
+type ghIssue struct {
+	Number    int        `json:"number"`
+	Title     string     `json:"title"`
+	Body      string     `json:"body"`
+	Labels    []ghLabel  `json:"labels"`
+	Assignees []ghAuthor `json:"assignees"`
+}
+
 func cmdError(err error) string {
 	var exitErr *exec.ExitError
 	if errors.As(err, &exitErr) {
