@@ -676,8 +676,8 @@ func (m agentModel) updateWorker(num int, w *issueWorker, msg tea.Msg) (tea.Mode
 		w.pr = msg.pr
 		w.checks = parseChecks(msg.pr.StatusCheckRollup)
 
-		if msg.pr.State == "MERGED" {
-			m.addLog(fmt.Sprintf("#%d PR #%d merged!", num, w.prNumber))
+		if msg.pr.State == "MERGED" || msg.pr.State == "CLOSED" {
+			m.addLog(fmt.Sprintf("#%d PR #%d %s", num, w.prNumber, strings.ToLower(msg.pr.State)))
 			agentCleanupWorktree(w.worktree, w.branch)
 			delete(m.workers, num)
 			return m, nil
