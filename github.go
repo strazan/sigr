@@ -14,6 +14,7 @@ type ghPR struct {
 	Number            int             `json:"number"`
 	Title             string          `json:"title"`
 	HeadRefName       string          `json:"headRefName"`
+	State             string          `json:"state"`
 	ReviewDecision    string          `json:"reviewDecision"`
 	StatusCheckRollup json.RawMessage `json:"statusCheckRollup"`
 	Reviews           []ghReview      `json:"reviews"`

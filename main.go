@@ -235,28 +235,16 @@ func runHeal(prRef string, interval time.Duration, ls *listState) {
 }
 
 func runAgent(label string, all bool, interval time.Duration) {
-	for {
-		m := agentModel{
-			label:         label,
-			all:           all,
-			interval:      interval,
-			skippedIssues: make(map[int]bool),
-		}
+	m := agentModel{
+		label:    label,
+		all:      all,
+		interval: interval,
+		workers:  make(map[int]*issueWorker),
+	}
 
-		p := tea.NewProgram(m, tea.WithAltScreen())
-		finalModel, err := p.Run()
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "error: %v\n", err)
-			os.Exit(1)
-		}
-
-		fm := finalModel.(agentModel)
-		if fm.quitting || fm.prNumber == 0 {
-			return
-		}
-
-		// Hand off to heal mode
-		runHeal(strconv.Itoa(fm.prNumber), interval, nil)
-		// Loop for next issue
+	p := tea.NewProgram(m, tea.WithAltScreen())
+	if _, err := p.Run(); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
 	}
 }

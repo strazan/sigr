@@ -227,7 +227,7 @@ func healTeardownWorktree(dir string, created bool) tea.Cmd {
 func healFetchPR(prRef string) tea.Cmd {
 	return func() tea.Msg {
 		args := []string{"pr", "view", "--json",
-			"statusCheckRollup,number,title,headRefName,reviewDecision,reviewRequests,reviews,comments"}
+			"statusCheckRollup,number,title,headRefName,state,reviewDecision,reviewRequests,reviews,comments"}
 		if prRef != "" {
 			args = append(args, prRef)
 		}
