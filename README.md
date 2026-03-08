@@ -1,6 +1,6 @@
 # sigr
 
-TUI for watching prs. Polls checks, reviews, and comments so you don't have to, autofix issues you claude
+TUI for watching prs. Polls checks, reviews, and comments so you don't have to, autofix issues with claude
 
 <img width="1213" height="785" alt="image" src="https://github.com/user-attachments/assets/af9920c4-b1a7-4cc1-8e1f-bbce44115e6b" />
 
