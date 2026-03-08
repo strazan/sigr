@@ -38,6 +38,7 @@ type agentModel struct {
 	branch        string
 	worktreeDir   string
 	diff          string
+	commitMsg     string
 	prNumber      int
 	quitting      bool
 	errMsg        string
@@ -52,7 +53,7 @@ type agentClaimedMsg struct{}
 type agentWorktreeReadyMsg struct{ dir string }
 type agentImplementedMsg struct{}
 type agentDiffMsg struct{ diff string }
-type agentCommittedMsg struct{}
+type agentCommittedMsg struct{ commitMsg string }
 type agentPRCreatedMsg struct{ number int }
 type agentErrMsg struct{ err string }
 type agentTickMsg time.Time
@@ -197,7 +198,7 @@ func agentFetchDiffCmd(dir string) tea.Cmd {
 	}
 }
 
-func agentCommitAndPushCmd(branch, message, dir string) tea.Cmd {
+func agentCommitAndPushCmd(issue *ghIssue, branch, dir string) tea.Cmd {
 	return func() tea.Msg {
 		cmd := exec.Command("git", "add", "-A")
 		cmd.Dir = dir
@@ -205,7 +206,35 @@ func agentCommitAndPushCmd(branch, message, dir string) tea.Cmd {
 			return agentErrMsg{err: fmt.Sprintf("git add: %s", firstLine(out, err))}
 		}
 
-		cmd = exec.Command("git", "commit", "--no-verify", "-m", message)
+		// Get recent commits for convention
+		logCmd := exec.Command("git", "log", "--oneline", "-5")
+		logCmd.Dir = dir
+		logOut, _ := logCmd.Output()
+
+		// Get staged diff summary
+		diffCmd := exec.Command("git", "diff", "--staged", "--stat")
+		diffCmd.Dir = dir
+		diffOut, _ := diffCmd.Output()
+
+		// Generate commit message with Claude
+		prompt := fmt.Sprintf(
+			"Generate a single-line git commit message for this change. "+
+				"Match the style and convention of the recent commits below. "+
+				"Output ONLY the commit message, nothing else.\n\n"+
+				"Recent commits:\n%s\n"+
+				"Changes:\n%s\n"+
+				"This implements issue #%d: %s",
+			string(logOut), string(diffOut), issue.Number, issue.Title)
+		claudeOut, err := exec.Command("claude", "-p", prompt).Output()
+		commitMsg := strings.TrimSpace(string(claudeOut))
+		if err != nil || commitMsg == "" {
+			commitMsg = fmt.Sprintf("feat: implement #%d", issue.Number)
+		}
+		if i := strings.Index(commitMsg, "\n"); i > 0 {
+			commitMsg = commitMsg[:i]
+		}
+
+		cmd = exec.Command("git", "commit", "--no-verify", "-m", commitMsg)
 		cmd.Dir = dir
 		if out, err := cmd.CombinedOutput(); err != nil {
 			return agentErrMsg{err: fmt.Sprintf("git commit: %s", firstLine(out, err))}
@@ -217,15 +246,15 @@ func agentCommitAndPushCmd(branch, message, dir string) tea.Cmd {
 			return agentErrMsg{err: fmt.Sprintf("git push: %s", firstLine(out, err))}
 		}
 
-		return agentCommittedMsg{}
+		return agentCommittedMsg{commitMsg: commitMsg}
 	}
 }
 
-func agentCreatePRCmd(issue *ghIssue, branch, dir string) tea.Cmd {
+func agentCreatePRCmd(issue *ghIssue, commitMsg, branch, dir string) tea.Cmd {
 	return func() tea.Msg {
-		title := issue.Title
-		if len(title) > 72 {
-			title = title[:72]
+		title := commitMsg
+		if title == "" {
+			title = issue.Title
 		}
 		body := fmt.Sprintf("Closes #%d\n\nImplemented by sigr agent.", issue.Number)
 
@@ -359,16 +388,13 @@ func (m agentModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.diff = msg.diff
 		m.log = append(m.log, healLogEntry{time: time.Now(), message: "Changes detected"})
 		m.phase = agentCommit
-		commitMsg := fmt.Sprintf("feat: implement #%d %s", m.issue.Number, m.issue.Title)
-		if len(commitMsg) > 72 {
-			commitMsg = commitMsg[:72]
-		}
-		return m, agentCommitAndPushCmd(m.branch, commitMsg, m.worktreeDir)
+		return m, agentCommitAndPushCmd(m.issue, m.branch, m.worktreeDir)
 
 	case agentCommittedMsg:
-		m.log = append(m.log, healLogEntry{time: time.Now(), message: "Pushed to " + m.branch})
+		m.commitMsg = msg.commitMsg
+		m.log = append(m.log, healLogEntry{time: time.Now(), message: "Pushed: " + msg.commitMsg})
 		m.phase = agentCreatePR
-		return m, agentCreatePRCmd(m.issue, m.branch, m.worktreeDir)
+		return m, agentCreatePRCmd(m.issue, m.commitMsg, m.branch, m.worktreeDir)
 
 	case agentPRCreatedMsg:
 		m.prNumber = msg.number
