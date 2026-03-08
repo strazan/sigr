@@ -8,6 +8,12 @@ LDFLAGS := -s -w \
 	-X main.date=$(DATE)
 BIN = bin/sigr
 
+fmt:
+	gofmt -w .
+
+check-fmt:
+	@test -z "$$(gofmt -l .)" || { gofmt -l . ; echo "Run 'make fmt' to fix formatting"; exit 1; }
+
 build:
 	go build -ldflags "$(LDFLAGS)" -o $(BIN) .
 
@@ -29,4 +35,4 @@ endif
 clean:
 	rm -f $(BIN)
 
-.PHONY: build install reinstall uninstall clean release
+.PHONY: fmt check-fmt build install reinstall uninstall clean release
