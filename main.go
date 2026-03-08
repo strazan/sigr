@@ -239,6 +239,7 @@ func runAgent(label string, all bool, interval time.Duration) {
 		m := agentModel{
 			label:         label,
 			all:           all,
+			interval:      interval,
 			skippedIssues: make(map[int]bool),
 		}
 

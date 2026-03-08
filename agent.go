@@ -17,7 +17,8 @@ import (
 type agentPhase int
 
 const (
-	agentFetchIssues agentPhase = iota
+	agentWatching agentPhase = iota
+	agentFetchIssues
 	agentClaim
 	agentWorktree
 	agentImplement
@@ -32,6 +33,7 @@ type agentModel struct {
 	phase         agentPhase
 	label         string
 	all           bool
+	interval      time.Duration
 	issue         *ghIssue
 	branch        string
 	worktreeDir   string
@@ -53,8 +55,15 @@ type agentDiffMsg struct{ diff string }
 type agentCommittedMsg struct{}
 type agentPRCreatedMsg struct{ number int }
 type agentErrMsg struct{ err string }
+type agentTickMsg time.Time
 
 // Commands
+
+func agentTickCmd(d time.Duration) tea.Cmd {
+	return tea.Tick(d, func(t time.Time) tea.Msg {
+		return agentTickMsg(t)
+	})
+}
 
 func agentFetchIssuesCmd(label string, all bool) tea.Cmd {
 	return func() tea.Msg {
@@ -281,7 +290,7 @@ func slugify(title string) string {
 // Init
 
 func (m agentModel) Init() tea.Cmd {
-	return agentFetchIssuesCmd(m.label, m.all)
+	return tea.Batch(agentFetchIssuesCmd(m.label, m.all), agentTickCmd(m.interval))
 }
 
 // Update
@@ -302,6 +311,13 @@ func (m agentModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		}
 
+	case agentTickMsg:
+		if m.phase == agentWatching {
+			m.phase = agentFetchIssues
+			return m, tea.Batch(agentFetchIssuesCmd(m.label, m.all), agentTickCmd(m.interval))
+		}
+		return m, agentTickCmd(m.interval)
+
 	case agentIssuesMsg:
 		// Filter out skipped issues
 		var available []ghIssue
@@ -311,9 +327,8 @@ func (m agentModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		if len(available) == 0 {
-			m.log = append(m.log, healLogEntry{time: time.Now(), message: "No more issues to work on"})
-			m.quitting = true
-			return m, tea.Quit
+			m.phase = agentWatching
+			return m, nil
 		}
 		m.issue = &available[0]
 		m.log = append(m.log, healLogEntry{time: time.Now(),
@@ -375,12 +390,12 @@ func (m agentModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		agentCleanupWorktree(m.worktreeDir, m.branch)
 		m.worktreeDir = ""
 
-		// Reset and try next issue
+		// Reset and wait for next poll
 		m.issue = nil
 		m.branch = ""
 		m.diff = ""
-		m.phase = agentFetchIssues
-		return m, agentFetchIssuesCmd(m.label, m.all)
+		m.phase = agentWatching
+		return m, nil
 	}
 
 	return m, nil
@@ -403,6 +418,8 @@ func (m agentModel) View() string {
 
 	// Status
 	switch m.phase {
+	case agentWatching:
+		b.WriteString(green.Render(" ● Watching") + dim.Render(fmt.Sprintf(" (polling every %s)", m.interval)))
 	case agentFetchIssues:
 		b.WriteString(dim.Render(" ◌ Fetching issues..."))
 	case agentClaim:
