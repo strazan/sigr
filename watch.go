@@ -33,6 +33,7 @@ type model struct {
 	exitCode   int
 	quitting   bool
 	back       bool // true = return to list instead of exiting
+	fix        bool // true = enter fix mode
 	fromList   bool // true = launched from list view
 	listState  *listState
 	err        error
@@ -95,6 +96,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "esc":
 			if m.fromList {
 				m.back = true
+				return m, tea.Quit
+			}
+		case "f":
+			if m.hasFailedChecks() {
+				m.fix = true
 				return m, tea.Quit
 			}
 		}
@@ -313,9 +319,21 @@ func (m model) View() string {
 	if m.fromList {
 		hint = fmt.Sprintf("polling every %s · esc back · q to quit", m.interval)
 	}
+	if m.hasFailedChecks() {
+		hint += " · f fix"
+	}
 	b.WriteString("\n" + dim.Render(hint) + "\n")
 
 	return b.String()
+}
+
+func (m model) hasFailedChecks() bool {
+	for _, c := range m.checks {
+		if c.Status == "COMPLETED" && !isSuccess(c.Conclusion) {
+			return true
+		}
+	}
+	return false
 }
 
 func checkDot(c check) string {
